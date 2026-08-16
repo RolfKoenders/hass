@@ -629,6 +629,68 @@ def test_oversized_frame_is_refused():
         server.stop()
 
 
+def test_local_url_is_preferred_when_reachable():
+    print("local: a reachable local URL is used ahead of the primary URL")
+    local = FakeHA()
+    bridge = BridgeProc()
+    try:
+        # Port 1 refuses instantly, so a successful connection can only have
+        # gone through localUrl.
+        bridge.send({"op": "config", "url": "http://127.0.0.1:1",
+                     "localUrl": local.url, "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected", connected is not None)
+        check("flags the connection as local",
+              connected is not None and connected.get("usingLocal") is True,
+              connected)
+        check("the local server saw the connection", local.connections >= 1,
+              local.connections)
+    finally:
+        bridge.stop()
+        local.stop()
+
+
+def test_falls_back_to_primary_when_local_is_unreachable():
+    print("local: an unreachable local URL falls back to the primary URL")
+    server = FakeHA()
+    bridge = BridgeProc()
+    try:
+        bridge.send({"op": "config", "url": server.url,
+                     "localUrl": "http://127.0.0.1:1", "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected", connected is not None)
+        check("does not flag the connection as local",
+              connected is not None and connected.get("usingLocal") is False,
+              connected)
+        check("the primary server saw the connection", server.connections >= 1,
+              server.connections)
+    finally:
+        bridge.stop()
+        server.stop()
+
+
+def test_unparseable_local_url_does_not_block_the_primary():
+    print("local: a bad local URL is skipped, not fatal")
+    # The local URL is optional; a typo there must not stop the primary URL
+    # — the one the user actually confirmed — from being tried at all.
+    server = FakeHA()
+    bridge = BridgeProc()
+    try:
+        bridge.send({"op": "config", "url": server.url,
+                     "localUrl": "https://192.168.1.50:8123]", "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("still reaches connected via the primary URL", connected is not None)
+        check("does not flag the connection as local",
+              connected is not None and connected.get("usingLocal") is False,
+              connected)
+    finally:
+        bridge.stop()
+        server.stop()
+
+
 def test_demo_needs_no_server():
     print("demo: runs standalone and drifts on its own")
     bridge = BridgeProc("--demo")
@@ -702,6 +764,9 @@ def main():
                  test_wss_certificate_policy,
                  test_invalid_websocket_message_is_controlled,
                  test_fragment_flood_hits_size_limit,
+                 test_local_url_is_preferred_when_reachable,
+                 test_falls_back_to_primary_when_local_is_unreachable,
+                 test_unparseable_local_url_does_not_block_the_primary,
                  test_demo_needs_no_server):
         test()
         print()

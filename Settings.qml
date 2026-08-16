@@ -25,6 +25,7 @@ Item {
 
   // Local until Connect, so a half-typed URL never reaches the bridge.
   property string urlDraft: ""
+  property string localUrlDraft: ""
   property string tokenDraft: ""
 
   property string query: ""
@@ -88,6 +89,7 @@ Item {
   function resetDrafts() {
     if (!service) return
     root.urlDraft = service.baseUrl
+    root.localUrlDraft = service.localUrl
     // The stored token never comes back to screen; blank means "keep it".
     root.tokenDraft = ""
     root.query = ""
@@ -100,7 +102,8 @@ Item {
 
   function applyConnection() {
     if (!service) return
-    if (service.applyConnection(root.urlDraft.trim(), root.tokenDraft, false)) {
+    if (service.applyConnection(root.urlDraft.trim(), root.localUrlDraft.trim(),
+                                root.tokenDraft, false)) {
       root.tokenDraft = ""
     }
   }
@@ -248,7 +251,10 @@ Item {
       readonly property bool needsToken: root.service
         ? root.service.requiresTokenFor(root.urlDraft.trim()) : true
       readonly property bool validUrl: Connection.normalizeOrigin(root.urlDraft) !== ""
-      readonly property bool canConnect: validUrl && !keyringBusy
+      // Blank is fine — it just means no local fallback.
+      readonly property bool validLocalUrl: root.localUrlDraft.trim().length === 0
+        || Connection.normalizeOrigin(root.localUrlDraft) !== ""
+      readonly property bool canConnect: validUrl && validLocalUrl && !keyringBusy
         && (!needsToken || root.tokenDraft.length > 0)
 
       Column {
@@ -280,6 +286,48 @@ Item {
             width: connectionColumn.width
             visible: root.urlDraft.trim().toLowerCase().indexOf("http://") === 0
               || root.urlDraft.trim().toLowerCase().indexOf("ws://") === 0
+            text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
+            color: Color.muted
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        Column {
+          width: connectionColumn.width
+          spacing: Style.spacing.sm
+
+          Text {
+            textFormat: Text.PlainText
+            text: "Local network URL (optional)"
+            color: Color.muted
+            font.family: root.family
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          TextField {
+            width: connectionColumn.width
+            text: root.localUrlDraft
+            placeholderText: "https://192.168.1.50:8123"
+            onTextChanged: root.localUrlDraft = text
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            width: connectionColumn.width
+            text: "Tried first when reachable — e.g. your instance's LAN address. Falls back to the URL above otherwise. Uses the same access token."
+            color: Color.muted
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            width: connectionColumn.width
+            visible: root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
+              || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0
             text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
             color: Color.muted
             font.family: root.family
@@ -404,7 +452,9 @@ Item {
               if (!root.service.configured) return "Not connected"
               switch (root.service.phase) {
               case "connected":
-                return (root.service.demoMode ? "Demo running · " : "Connected · ")
+                return (root.service.demoMode ? "Demo running · "
+                  : root.service.usingLocal ? "Connected (local network) · "
+                  : "Connected · ")
                   + Object.keys(root.service.states).length + " devices"
               case "connecting": return root.service.lastError
                 ? "Connecting… · " + root.service.lastError

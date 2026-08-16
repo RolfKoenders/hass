@@ -86,6 +86,12 @@ your profile → Security), or flip on **Demo mode** to try the panel against a
 built-in fake house with no instance at all. Then switch to **Devices** and
 star the ones you want in the panel.
 
+Optionally, add a **Local network URL** — your instance's LAN address. It's
+tried first on every connection attempt and used when it answers, with the
+URL above as fallback (for example when a laptop is away from home). It's the
+same Home Assistant instance reached by a different address, so it reuses the
+one access token above rather than needing its own.
+
 ## Debugging
 
 ```bash

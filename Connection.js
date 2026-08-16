@@ -76,10 +76,18 @@ function normalizeOrigin(value) {
 //
 // Empty when the URL cannot be normalized; callers treat that as invalid
 // rather than as a connection worth starting.
-function signature(demoMode, value) {
+//
+// localValue is optional: an alternate address for the same instance (a LAN
+// address, tried first when reachable). It shares value's credential origin,
+// so it is folded into the signature only to restart the bridge when it
+// changes — it never contributes an origin of its own.
+function signature(demoMode, value, localValue) {
   if (demoMode) return "demo"
   var origin = normalizeOrigin(value)
-  return origin ? origin + "|" + String(value || "").trim() : ""
+  if (!origin) return ""
+  var text = origin + "|" + String(value || "").trim()
+  var local = String(localValue || "").trim()
+  return local ? text + "|" + local : text
 }
 
 function acceptsGeneration(activeGeneration, eventGeneration) {

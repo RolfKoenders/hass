@@ -38,6 +38,7 @@ const parsed = Config.parse(JSON.stringify({
 }), ["light.demo"]);
 eq("typed values are normalized", parsed.config, {
   baseUrl: "",
+  localUrl: "",
   demoMode: true,
   favorites: ["light.a"],
   demoFavorites: [],
@@ -48,12 +49,21 @@ eq("typed values are normalized", parsed.config, {
   iconOverrides: {}
 });
 
+const withLocal = Config.parse(JSON.stringify({
+  baseUrl: "https://ha.example.com",
+  localUrl: 7
+}), []);
+eq("a non-string localUrl falls back to empty", withLocal.config.localUrl, "");
+
 const merged = Config.merge(parsed.config, {
   groupByArea: true,
+  localUrl: "https://192.168.1.50:8123",
   token: "must-not-be-serialized",
   unknown: "ignored"
 });
 eq("known keys merge", merged.groupByArea, true);
+eq("localUrl merges like any other known key",
+   merged.localUrl, "https://192.168.1.50:8123");
 eq("unknown and secret keys are dropped", merged.token, undefined);
 eq("serialized config has one trailing newline",
    Config.serialize(merged).endsWith("}\n"), true);

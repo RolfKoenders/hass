@@ -1,7 +1,7 @@
 .pragma library
 
 var KEYS = [
-  "baseUrl", "demoMode", "favorites", "demoFavorites", "groupByArea",
+  "baseUrl", "localUrl", "demoMode", "favorites", "demoFavorites", "groupByArea",
   "showEntityIcons", "selectedTab", "displayNameOverrides", "iconOverrides"
 ]
 
@@ -48,6 +48,10 @@ function parse(text, demoDefaults) {
     error: error,
     config: {
       baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl : "",
+      // Optional. An alternate address for the same Home Assistant instance
+      // — a LAN address, say — tried first when reachable. It shares baseUrl's
+      // credential; it is never a separate keyring origin.
+      localUrl: typeof raw.localUrl === "string" ? raw.localUrl : "",
       demoMode: raw.demoMode === true,
       favorites: stringList(raw.favorites, []),
       demoFavorites: stringList(raw.demoFavorites,

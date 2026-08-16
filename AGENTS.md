@@ -45,7 +45,13 @@ to `Service.qml`.
 - Scope credentials to a normalized server origin. Changing origin must never
   silently reuse a credential. Credential deletion must target an explicit
   origin and must not remove a saved live credential as a side effect of demo
-  mode.
+  mode. The optional local-network URL (`localUrl`) is a deliberate, narrow
+  exception: it is an alternate address for the same instance the primary URL
+  already names, not a second server, so it intentionally shares the primary
+  origin's stored token rather than getting its own keyring entry. Do not add
+  separate credential storage for it, and do not let it participate in
+  `currentOrigin()`/`requiresTokenFor()` — those stay scoped to the primary
+  URL only.
 - Treat `http://` and `ws://` as plaintext transport. Any UI path that permits
   them must make the token-exposure risk explicit; never downgrade an invalid
   or unknown scheme to plaintext.
