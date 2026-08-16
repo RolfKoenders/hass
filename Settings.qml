@@ -26,6 +26,10 @@ Item {
   // Local until Connect, so a half-typed URL never reaches the bridge.
   property string urlDraft: ""
   property string localUrlDraft: ""
+  // Collapsed unless a local URL is already saved: most people never need
+  // this field, and a second always-visible URL box with its own warning text
+  // outweighs the value of surfacing it up front.
+  property bool localUrlExpanded: false
   property string tokenDraft: ""
 
   property string query: ""
@@ -90,6 +94,7 @@ Item {
     if (!service) return
     root.urlDraft = service.baseUrl
     root.localUrlDraft = service.localUrl
+    root.localUrlExpanded = service.localUrl.length > 0
     // The stored token never comes back to screen; blank means "keep it".
     root.tokenDraft = ""
     root.query = ""
@@ -298,15 +303,24 @@ Item {
           width: connectionColumn.width
           spacing: Style.spacing.sm
 
-          Text {
-            textFormat: Text.PlainText
-            text: "Local network URL (optional)"
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.bodySmall
+          // Ui/Toggle: label + description + switch, row owns the click.
+          Toggle {
+            width: connectionColumn.width
+            label: "Local network URL"
+            description: "Try a LAN address first, e.g. your instance's local IP, before falling back to the URL above. Uses the same access token."
+            checked: root.localUrlExpanded
+            foreground: root.foreground
+            fontFamily: root.family
+            onClicked: {
+              root.localUrlExpanded = !root.localUrlExpanded
+              // Collapsing means "no local URL" — a hidden stale draft would
+              // otherwise still reach applyConnection.
+              if (!root.localUrlExpanded) root.localUrlDraft = ""
+            }
           }
 
           TextField {
+            visible: root.localUrlExpanded
             width: connectionColumn.width
             text: root.localUrlDraft
             placeholderText: "https://192.168.1.50:8123"
@@ -316,18 +330,9 @@ Item {
           Text {
             textFormat: Text.PlainText
             width: connectionColumn.width
-            text: "Tried first when reachable — e.g. your instance's LAN address. Falls back to the URL above otherwise. Uses the same access token."
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            width: connectionColumn.width
-            visible: root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
-              || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0
+            visible: root.localUrlExpanded
+              && (root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
+                || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0)
             text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
             color: Color.muted
             font.family: root.family
