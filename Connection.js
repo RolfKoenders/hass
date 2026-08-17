@@ -78,16 +78,20 @@ function normalizeOrigin(value) {
 // rather than as a connection worth starting.
 //
 // localValue is optional: an alternate address for the same instance (a LAN
-// address, tried first when reachable). It shares value's credential origin,
-// so it is folded into the signature only to restart the bridge when it
-// changes — it never contributes an origin of its own.
-function signature(demoMode, value, localValue) {
+// address, only ever used on trustedNetwork — see bin/hass-bridge). It shares
+// value's credential origin, so both are folded into the signature only to
+// restart the bridge when either changes — neither contributes an origin of
+// its own.
+function signature(demoMode, value, localValue, trustedNetwork) {
   if (demoMode) return "demo"
   var origin = normalizeOrigin(value)
   if (!origin) return ""
   var text = origin + "|" + String(value || "").trim()
   var local = String(localValue || "").trim()
-  return local ? text + "|" + local : text
+  if (local) text += "|" + local
+  var trust = String(trustedNetwork || "").trim()
+  if (trust) text += "|" + trust
+  return text
 }
 
 function acceptsGeneration(activeGeneration, eventGeneration) {

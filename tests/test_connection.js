@@ -88,6 +88,17 @@ eq("changing only the local URL changes the signature",
    Connection.signature(false, "https://ha.local:8123", "https://192.168.1.50:8123")
      === Connection.signature(false, "https://ha.local:8123", "https://192.168.1.51:8123"),
    false);
+eq("a blank trusted network does not change the signature",
+   Connection.signature(false, "https://ha.local:8123", "https://192.168.1.50:8123", ""),
+   Connection.signature(false, "https://ha.local:8123", "https://192.168.1.50:8123"));
+eq("the trusted network is folded into the signature",
+   Connection.signature(false, "https://ha.local:8123", "https://192.168.1.50:8123", "Home"),
+   "https://ha.local:8123|https://ha.local:8123|https://192.168.1.50:8123|Home");
+eq("changing only the trusted network changes the signature",
+   Connection.signature(false, "https://ha.local:8123", "https://192.168.1.50:8123", "Home")
+     === Connection.signature(false, "https://ha.local:8123",
+                              "https://192.168.1.50:8123", "Office"),
+   false);
 eq("matching generation is accepted", Connection.acceptsGeneration(4, 4), true);
 eq("old generation is rejected", Connection.acceptsGeneration(5, 4), false);
 eq("missing generation is rejected", Connection.acceptsGeneration(5, undefined), false);

@@ -12,7 +12,10 @@ Canonical public repository: `https://github.com/konradk/hass`.
 
 The plugin must remain installable without npm, pip, a virtual environment, or
 first-run downloads. Python 3.11 or newer, `secret-tool`, and the vendored
-`websockets` package are the runtime dependencies.
+`websockets` package are the runtime dependencies. `nmcli` is an additional,
+conditional one: only invoked when a local network URL is actually configured
+(to check the current Wi-Fi network name), never otherwise. Its absence must
+degrade to "never use the local URL", not an error.
 
 ## Architecture map
 
@@ -52,6 +55,15 @@ to `Service.qml`.
   separate credential storage for it, and do not let it participate in
   `currentOrigin()`/`requiresTokenFor()` — those stay scoped to the primary
   URL only.
+- `localUrl` must never be tried unless `trustedNetwork` is set and matches
+  the current Wi-Fi network name (`current_wifi_ssid()` in `bin/hass-bridge`,
+  checked fresh on every connection attempt). This is the only thing standing
+  between an alternate address and sending the token to whatever happens to
+  answer there on a network the user never trusted — fail closed on every
+  path (no NetworkManager, an nmcli error or timeout, no active Wi-Fi, no
+  match) rather than defaulting to "trusted". Enforce this in both the bridge
+  and `Service.applyConnection` — the settings UI check is a fast-fail
+  convenience, not the security boundary.
 - Treat `http://` and `ws://` as plaintext transport. Any UI path that permits
   them must make the token-exposure risk explicit; never downgrade an invalid
   or unknown scheme to plaintext.

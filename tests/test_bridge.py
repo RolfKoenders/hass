@@ -631,13 +631,16 @@ def test_oversized_frame_is_refused():
 
 def test_local_url_is_preferred_when_reachable():
     print("local: a reachable local URL is used ahead of the primary URL")
+    # HASS_BRIDGE_TEST_SSID is a test-only seam (see current_wifi_ssid in
+    # bin/hass-bridge) standing in for actually being joined to trustedNetwork
+    # — the bridge has no controllable Wi-Fi to check in CI.
     local = FakeHA()
-    bridge = BridgeProc()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "Home"})
     try:
         # Port 1 refuses instantly, so a successful connection can only have
         # gone through localUrl.
         bridge.send({"op": "config", "url": "http://127.0.0.1:1",
-                     "localUrl": local.url, "token": "tok"})
+                     "localUrl": local.url, "trustedNetwork": "Home", "token": "tok"})
         connected = bridge.wait_for(
             lambda e: e["ev"] == "phase" and e["phase"] == "connected")
         check("reaches connected", connected is not None)
@@ -654,10 +657,11 @@ def test_local_url_is_preferred_when_reachable():
 def test_falls_back_to_primary_when_local_is_unreachable():
     print("local: an unreachable local URL falls back to the primary URL")
     server = FakeHA()
-    bridge = BridgeProc()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "Home"})
     try:
         bridge.send({"op": "config", "url": server.url,
-                     "localUrl": "http://127.0.0.1:1", "token": "tok"})
+                     "localUrl": "http://127.0.0.1:1", "trustedNetwork": "Home",
+                     "token": "tok"})
         connected = bridge.wait_for(
             lambda e: e["ev"] == "phase" and e["phase"] == "connected")
         check("reaches connected", connected is not None)
@@ -676,10 +680,11 @@ def test_unparseable_local_url_does_not_block_the_primary():
     # The local URL is optional; a typo there must not stop the primary URL
     # — the one the user actually confirmed — from being tried at all.
     server = FakeHA()
-    bridge = BridgeProc()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "Home"})
     try:
         bridge.send({"op": "config", "url": server.url,
-                     "localUrl": "https://192.168.1.50:8123]", "token": "tok"})
+                     "localUrl": "https://192.168.1.50:8123]",
+                     "trustedNetwork": "Home", "token": "tok"})
         connected = bridge.wait_for(
             lambda e: e["ev"] == "phase" and e["phase"] == "connected")
         check("still reaches connected via the primary URL", connected is not None)
@@ -688,6 +693,74 @@ def test_unparseable_local_url_does_not_block_the_primary():
               connected)
     finally:
         bridge.stop()
+        server.stop()
+
+
+def test_local_url_is_skipped_off_the_trusted_network():
+    print("local: a reachable local URL is not used off the trusted network")
+    # This is the actual security property: a local URL must never be tried
+    # just because it's configured. Home is what's saved; the bridge reports
+    # being on CoffeeShop instead, so the local server must never be dialed
+    # even though it would happily answer.
+    local = FakeHA()
+    server = FakeHA()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "CoffeeShop"})
+    try:
+        bridge.send({"op": "config", "url": server.url, "localUrl": local.url,
+                     "trustedNetwork": "Home", "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected via the primary URL", connected is not None)
+        check("does not flag the connection as local",
+              connected is not None and connected.get("usingLocal") is False,
+              connected)
+        check("the local server was never contacted", local.connections == 0,
+              local.connections)
+    finally:
+        bridge.stop()
+        local.stop()
+        server.stop()
+
+
+def test_local_url_without_a_trusted_network_is_never_used():
+    print("local: a local URL with no trusted network is never tried")
+    # Defense in depth: the settings UI and Service.applyConnection both
+    # refuse to save this combination, but the bridge must not rely on that.
+    local = FakeHA()
+    server = FakeHA()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "Home"})
+    try:
+        bridge.send({"op": "config", "url": server.url, "localUrl": local.url,
+                     "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected via the primary URL", connected is not None)
+        check("the local server was never contacted", local.connections == 0,
+              local.connections)
+    finally:
+        bridge.stop()
+        local.stop()
+        server.stop()
+
+
+def test_unknown_wifi_state_fails_closed():
+    print("local: an undeterminable Wi-Fi state never falls back to trusted")
+    # HASS_BRIDGE_TEST_SSID="" stands in for current_wifi_ssid() returning
+    # None — no NetworkManager, no active Wi-Fi, an nmcli error or timeout.
+    local = FakeHA()
+    server = FakeHA()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": ""})
+    try:
+        bridge.send({"op": "config", "url": server.url, "localUrl": local.url,
+                     "trustedNetwork": "Home", "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected via the primary URL", connected is not None)
+        check("the local server was never contacted", local.connections == 0,
+              local.connections)
+    finally:
+        bridge.stop()
+        local.stop()
         server.stop()
 
 
@@ -767,6 +840,9 @@ def main():
                  test_local_url_is_preferred_when_reachable,
                  test_falls_back_to_primary_when_local_is_unreachable,
                  test_unparseable_local_url_does_not_block_the_primary,
+                 test_local_url_is_skipped_off_the_trusted_network,
+                 test_local_url_without_a_trusted_network_is_never_used,
+                 test_unknown_wifi_state_fails_closed,
                  test_demo_needs_no_server):
         test()
         print()

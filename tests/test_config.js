@@ -39,6 +39,7 @@ const parsed = Config.parse(JSON.stringify({
 eq("typed values are normalized", parsed.config, {
   baseUrl: "",
   localUrl: "",
+  trustedNetwork: "",
   demoMode: true,
   favorites: ["light.a"],
   demoFavorites: [],
@@ -51,9 +52,12 @@ eq("typed values are normalized", parsed.config, {
 
 const withLocal = Config.parse(JSON.stringify({
   baseUrl: "https://ha.example.com",
-  localUrl: 7
+  localUrl: 7,
+  trustedNetwork: 9
 }), []);
 eq("a non-string localUrl falls back to empty", withLocal.config.localUrl, "");
+eq("a non-string trustedNetwork falls back to empty",
+   withLocal.config.trustedNetwork, "");
 
 const merged = Config.merge(parsed.config, {
   groupByArea: true,

@@ -26,6 +26,9 @@ Item {
   // Local until Connect, so a half-typed URL never reaches the bridge.
   property string urlDraft: ""
   property string localUrlDraft: ""
+  // Required whenever localUrlDraft is non-empty: the local URL is only ever
+  // tried on this Wi-Fi network. See bin/hass-bridge's current_wifi_ssid.
+  property string trustedNetworkDraft: ""
   // Collapsed unless a local URL is already saved: most people never need
   // this field, and a second always-visible URL box with its own warning text
   // outweighs the value of surfacing it up front.
@@ -94,6 +97,7 @@ Item {
     if (!service) return
     root.urlDraft = service.baseUrl
     root.localUrlDraft = service.localUrl
+    root.trustedNetworkDraft = service.trustedNetwork
     root.localUrlExpanded = service.localUrl.length > 0
     // The stored token never comes back to screen; blank means "keep it".
     root.tokenDraft = ""
@@ -108,7 +112,7 @@ Item {
   function applyConnection() {
     if (!service) return
     if (service.applyConnection(root.urlDraft.trim(), root.localUrlDraft.trim(),
-                                root.tokenDraft, false)) {
+                                root.trustedNetworkDraft.trim(), root.tokenDraft, false)) {
       root.tokenDraft = ""
     }
   }
@@ -259,8 +263,12 @@ Item {
       // Blank is fine — it just means no local fallback.
       readonly property bool validLocalUrl: root.localUrlDraft.trim().length === 0
         || Connection.normalizeOrigin(root.localUrlDraft) !== ""
-      readonly property bool canConnect: validUrl && validLocalUrl && !keyringBusy
-        && (!needsToken || root.tokenDraft.length > 0)
+      // A local URL with no trusted network to gate it would be tried on
+      // every Wi-Fi the laptop joins.
+      readonly property bool localUrlNeedsTrust: root.localUrlDraft.trim().length > 0
+        && root.trustedNetworkDraft.trim().length === 0
+      readonly property bool canConnect: validUrl && validLocalUrl && !localUrlNeedsTrust
+        && !keyringBusy && (!needsToken || root.tokenDraft.length > 0)
 
       Column {
         id: connectionColumn
@@ -315,7 +323,10 @@ Item {
               root.localUrlExpanded = !root.localUrlExpanded
               // Collapsing means "no local URL" — a hidden stale draft would
               // otherwise still reach applyConnection.
-              if (!root.localUrlExpanded) root.localUrlDraft = ""
+              if (!root.localUrlExpanded) {
+                root.localUrlDraft = ""
+                root.trustedNetworkDraft = ""
+              }
             }
           }
 
@@ -334,6 +345,34 @@ Item {
               && (root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
                 || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0)
             text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
+            color: Color.muted
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            visible: root.localUrlExpanded
+            text: "Trusted Wi-Fi network name"
+            color: Color.muted
+            font.family: root.family
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          TextField {
+            visible: root.localUrlExpanded
+            width: connectionColumn.width
+            text: root.trustedNetworkDraft
+            placeholderText: "Home"
+            onTextChanged: root.trustedNetworkDraft = text
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            width: connectionColumn.width
+            visible: root.localUrlExpanded
+            text: "Required. The local URL is only ever tried while connected to this Wi-Fi network — never on any other network, so the token can't be sent to whatever happens to answer at that address elsewhere."
             color: Color.muted
             font.family: root.family
             font.pixelSize: Style.font.caption

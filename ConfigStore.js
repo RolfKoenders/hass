@@ -1,8 +1,9 @@
 .pragma library
 
 var KEYS = [
-  "baseUrl", "localUrl", "demoMode", "favorites", "demoFavorites", "groupByArea",
-  "showEntityIcons", "selectedTab", "displayNameOverrides", "iconOverrides"
+  "baseUrl", "localUrl", "trustedNetwork", "demoMode", "favorites",
+  "demoFavorites", "groupByArea", "showEntityIcons", "selectedTab",
+  "displayNameOverrides", "iconOverrides"
 ]
 
 function stringList(value, fallback) {
@@ -49,9 +50,12 @@ function parse(text, demoDefaults) {
     config: {
       baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl : "",
       // Optional. An alternate address for the same Home Assistant instance
-      // — a LAN address, say — tried first when reachable. It shares baseUrl's
-      // credential; it is never a separate keyring origin.
+      // — a LAN address, say — tried first, but only on trustedNetwork. It
+      // shares baseUrl's credential; it is never a separate keyring origin.
       localUrl: typeof raw.localUrl === "string" ? raw.localUrl : "",
+      // The Wi-Fi network name localUrl requires a match against before it is
+      // ever tried. See bin/hass-bridge's current_wifi_ssid.
+      trustedNetwork: typeof raw.trustedNetwork === "string" ? raw.trustedNetwork : "",
       demoMode: raw.demoMode === true,
       favorites: stringList(raw.favorites, []),
       demoFavorites: stringList(raw.demoFavorites,

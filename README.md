@@ -56,6 +56,7 @@ omarchy-shell hass devices              # device picker
 - Omarchy 4 (`schemaVersion: 1` plugin API)
 - Python 3.11 or newer
 - `secret-tool` (libsecret) with a running keyring daemon
+- `nmcli` (NetworkManager), only if you use a local network URL
 
 The pure-Python runtime of `websockets` 17.0.1 is bundled with the plugin and
 loaded from `vendor/`. Users don't need `python-websockets`, `qt6-websockets`,
@@ -86,11 +87,15 @@ your profile → Security), or flip on **Demo mode** to try the panel against a
 built-in fake house with no instance at all. Then switch to **Devices** and
 star the ones you want in the panel.
 
-Optionally, add a **Local network URL** — your instance's LAN address. It's
-tried first on every connection attempt and used when it answers, with the
-URL above as fallback (for example when a laptop is away from home). It's the
-same Home Assistant instance reached by a different address, so it reuses the
-one access token above rather than needing its own.
+Optionally, turn on **Local network URL** to add your instance's LAN address.
+It's the same Home Assistant instance reached by a different address, so it
+reuses the one access token above rather than needing its own. It also asks
+for the name of your trusted Wi-Fi network: the local URL is only ever tried
+while connected to that network, and the URL above is used everywhere else.
+This matters because the local URL is plaintext-friendly on the assumption
+that your home network is trustworthy — without the network-name check, a
+laptop that later joins some other Wi-Fi with something answering on that
+same address would send it your token.
 
 ## Debugging
 

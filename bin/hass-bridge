@@ -13,13 +13,18 @@ writes commands on our stdin and reads events from our stdout.
 Commands (stdin)
     {"protocolVersion":1,"op":"config","generation":7,
      "url":"https://ha.local:8123","localUrl":"https://192.168.1.50:8123",
-     "token":"..."}
+     "trustedNetwork":"Home Wifi","token":"..."}
         Connect, or reconnect with new credentials. The token arrives here
         rather than in argv because /proc/<pid>/cmdline is readable by every
         process running as this user. localUrl is optional: an alternate
-        address for the same instance (a LAN address, say). Every connection
-        attempt tries it first with a short timeout and falls back to url on
-        failure — it shares url's token rather than needing its own.
+        address for the same instance (a LAN address, say). It is only ever
+        tried, ahead of url and with a short timeout, when trustedNetwork is
+        set and matches the current Wi-Fi network name (checked via nmcli).
+        Otherwise every attempt goes straight to url. This is what stops the
+        token from being sent to whatever happens to answer at that address
+        on an untrusted network — localUrl shares url's token rather than
+        needing its own, so this check is the only thing standing between it
+        and an unwanted disclosure.
     {"op":"call_service","domain":"light","service":"turn_on",
      "entity_id":"light.x","data":{"brightness_pct":40},"tag":"..."}
     {"op":"refresh"}       re-request the full state snapshot
@@ -53,8 +58,10 @@ import json
 import os
 import queue
 import random
+import re
 import socket
 import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -116,6 +123,50 @@ BACKOFF_MAX = 30.0
 # actually answer. A closed port refuses well inside this anyway; the timeout
 # only matters for an address nothing answers at all.
 LOCAL_CONNECT_TIMEOUT = 2.0
+
+# Bound on the nmcli call in current_wifi_ssid(), so a hung network stack
+# cannot wedge the bridge's single-threaded run loop.
+NETWORK_CHECK_TIMEOUT = 2.0
+
+
+def current_wifi_ssid():
+    """Best-effort current Wi-Fi network name, or None.
+
+    None whenever this cannot be determined with confidence — no
+    NetworkManager, no active Wi-Fi, a timeout, unparseable output — not just
+    when nothing matches. The local URL has to fail closed here: this is the
+    only thing standing between it and sending a token to whatever happens to
+    answer at that address on a network that was never trusted.
+    """
+    # Test-only seam. Real installs never set this; nothing in this plugin
+    # sets it either. It exists because tests/test_bridge.py drives the
+    # bridge as a real subprocess with no way to patch this function
+    # directly, and CI has no controllable Wi-Fi to join.
+    override = os.environ.get("HASS_BRIDGE_TEST_SSID")
+    if override is not None:
+        return override or None
+
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"],
+            capture_output=True, text=True, timeout=NETWORK_CHECK_TIMEOUT)
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        # nmcli's terse output escapes a literal ':' inside a field as '\:',
+        # so only an unescaped colon is a field separator.
+        fields = re.split(r"(?<!\\):", line, maxsplit=1)
+        if len(fields) != 2:
+            continue
+        active, raw_ssid = fields
+        if active != "yes":
+            continue
+        ssid = raw_ssid.replace("\\:", ":").replace("\\\\", "\\")
+        return ssid or None
+    return None
 
 
 def now():
@@ -523,6 +574,7 @@ class Bridge:
         self.verify_tls = verify_tls
         self.url = ""
         self.local_url = ""
+        self.trusted_network = ""
         self.using_local = False
         self.token = ""
         self.generation = 0
@@ -660,6 +712,9 @@ class Bridge:
         url = raw_url.strip() if isinstance(raw_url, str) else ""
         raw_local_url = command.get("localUrl") or ""
         local_url = raw_local_url.strip() if isinstance(raw_local_url, str) else ""
+        raw_trusted_network = command.get("trustedNetwork") or ""
+        trusted_network = raw_trusted_network.strip() \
+            if isinstance(raw_trusted_network, str) else ""
         token = command.get("token") or ""
         if not isinstance(token, str):
             token = ""
@@ -672,6 +727,7 @@ class Bridge:
 
         if (next_generation == self.generation and url == self.url
                 and local_url == self.local_url
+                and trusted_network == self.trusted_network
                 and token == self.token and self.transport is not None):
             return
 
@@ -681,6 +737,7 @@ class Bridge:
         self.generation = next_generation
         self.url = url
         self.local_url = local_url
+        self.trusted_network = trusted_network
         self.token = token
         self.want_connect = self.demo or bool(url and token)
         self.backoff = BACKOFF_START
@@ -699,6 +756,7 @@ class Bridge:
         self.want_connect = False
         self.url = ""
         self.local_url = ""
+        self.trusted_network = ""
         self.token = ""
         self.set_phase("idle", force=True)
 
@@ -869,13 +927,17 @@ class Bridge:
             self._finish_connect()
             return
 
-        # The local URL, if any, is always tried first — the network can have
-        # changed since the last attempt (a laptop rejoining home wifi) — and
-        # falls back to the primary URL on any failure. A local candidate that
-        # does not even parse is skipped rather than fatal: it is optional, so
-        # a typo there should not stop the primary URL from being tried.
+        # The local URL is tried first, ahead of the primary URL, but only
+        # when the current Wi-Fi network name matches trustedNetwork — this is
+        # re-checked on every attempt since the network can have changed since
+        # the last one (a laptop rejoining home wifi, or leaving it). Without
+        # this, a local URL would silently send the token to whatever answers
+        # at that address on any untrusted network the laptop joins. A local
+        # candidate that does not even parse is skipped rather than fatal: it
+        # is optional, so a typo there should not stop the primary URL.
         candidates = []
-        if self.local_url:
+        if (self.local_url and self.trusted_network
+                and current_wifi_ssid() == self.trusted_network):
             candidates.append((self.local_url, True, LOCAL_CONNECT_TIMEOUT))
         candidates.append((self.url, False, OPEN_TIMEOUT))
 
