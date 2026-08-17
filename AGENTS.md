@@ -55,9 +55,11 @@ to `Service.qml`.
   separate credential storage for it, and do not let it participate in
   `currentOrigin()`/`requiresTokenFor()` — those stay scoped to the primary
   URL only.
-- `localUrl` must never be tried unless `trustedNetwork` is set and matches
-  the current Wi-Fi network name (`current_wifi_ssid()` in `bin/hass-bridge`,
-  checked fresh on every connection attempt). This is the only thing standing
+- `localUrl` must never be tried unless `trustedNetwork` is set and one of its
+  comma-separated names matches the current Wi-Fi network name
+  (`current_wifi_ssid()` and `trusted_network_list()` in `bin/hass-bridge`,
+  checked fresh on every connection attempt — the list exists because a
+  router commonly broadcasts more than one SSID). This is the only thing standing
   between an alternate address and sending the token to whatever happens to
   answer there on a network the user never trusted — fail closed on every
   path (no NetworkManager, an nmcli error or timeout, no active Wi-Fi, no

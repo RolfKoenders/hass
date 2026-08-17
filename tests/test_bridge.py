@@ -696,6 +696,27 @@ def test_unparseable_local_url_does_not_block_the_primary():
         server.stop()
 
 
+def test_local_url_matches_any_of_several_trusted_networks():
+    print("local: trustedNetwork accepts a comma-separated list")
+    # A router commonly broadcasts more than one SSID (separate 2.4GHz/5GHz
+    # names); the current network only has to match one of the list.
+    local = FakeHA()
+    bridge = BridgeProc(env={"HASS_BRIDGE_TEST_SSID": "Home 5G"})
+    try:
+        bridge.send({"op": "config", "url": "http://127.0.0.1:1",
+                     "localUrl": local.url, "trustedNetwork": "Home, Home 5G",
+                     "token": "tok"})
+        connected = bridge.wait_for(
+            lambda e: e["ev"] == "phase" and e["phase"] == "connected")
+        check("reaches connected", connected is not None)
+        check("flags the connection as local",
+              connected is not None and connected.get("usingLocal") is True,
+              connected)
+    finally:
+        bridge.stop()
+        local.stop()
+
+
 def test_local_url_is_skipped_off_the_trusted_network():
     print("local: a reachable local URL is not used off the trusted network")
     # This is the actual security property: a local URL must never be tried
@@ -840,6 +861,7 @@ def main():
                  test_local_url_is_preferred_when_reachable,
                  test_falls_back_to_primary_when_local_is_unreachable,
                  test_unparseable_local_url_does_not_block_the_primary,
+                 test_local_url_matches_any_of_several_trusted_networks,
                  test_local_url_is_skipped_off_the_trusted_network,
                  test_local_url_without_a_trusted_network_is_never_used,
                  test_unknown_wifi_state_fails_closed,

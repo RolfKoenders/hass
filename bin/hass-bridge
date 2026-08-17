@@ -13,13 +13,15 @@ writes commands on our stdin and reads events from our stdout.
 Commands (stdin)
     {"protocolVersion":1,"op":"config","generation":7,
      "url":"https://ha.local:8123","localUrl":"https://192.168.1.50:8123",
-     "trustedNetwork":"Home Wifi","token":"..."}
+     "trustedNetwork":"Home,Home 5G","token":"..."}
         Connect, or reconnect with new credentials. The token arrives here
         rather than in argv because /proc/<pid>/cmdline is readable by every
         process running as this user. localUrl is optional: an alternate
         address for the same instance (a LAN address, say). It is only ever
         tried, ahead of url and with a short timeout, when trustedNetwork is
-        set and matches the current Wi-Fi network name (checked via nmcli).
+        set and one of its comma-separated names matches the current Wi-Fi
+        network name (checked via nmcli — a router commonly broadcasts more
+        than one SSID, e.g. separate 2.4GHz/5GHz names, hence the list).
         Otherwise every attempt goes straight to url. This is what stops the
         token from being sent to whatever happens to answer at that address
         on an untrusted network — localUrl shares url's token rather than
@@ -928,16 +930,17 @@ class Bridge:
             return
 
         # The local URL is tried first, ahead of the primary URL, but only
-        # when the current Wi-Fi network name matches trustedNetwork — this is
-        # re-checked on every attempt since the network can have changed since
-        # the last one (a laptop rejoining home wifi, or leaving it). Without
-        # this, a local URL would silently send the token to whatever answers
-        # at that address on any untrusted network the laptop joins. A local
-        # candidate that does not even parse is skipped rather than fatal: it
-        # is optional, so a typo there should not stop the primary URL.
+        # when the current Wi-Fi network name is one of trustedNetwork's
+        # comma-separated entries — this is re-checked on every attempt since
+        # the network can have changed since the last one (a laptop rejoining
+        # home wifi, or leaving it). Without this, a local URL would silently
+        # send the token to whatever answers at that address on any untrusted
+        # network the laptop joins. A local candidate that does not even parse
+        # is skipped rather than fatal: it is optional, so a typo there should
+        # not stop the primary URL.
         candidates = []
-        if (self.local_url and self.trusted_network
-                and current_wifi_ssid() == self.trusted_network):
+        trusted = self.trusted_network_list()
+        if self.local_url and trusted and current_wifi_ssid() in trusted:
             candidates.append((self.local_url, True, LOCAL_CONNECT_TIMEOUT))
         candidates.append((self.url, False, OPEN_TIMEOUT))
 
@@ -982,6 +985,13 @@ class Bridge:
         self.authenticated = False
         self.subscription_ready = False
         self.snapshot_ready = False
+
+    def trusted_network_list(self):
+        # A router commonly broadcasts more than one name — separate 2.4GHz
+        # and 5GHz SSIDs are the usual case — so this is a comma-separated
+        # list, matched against exactly, not a single name.
+        return [name.strip() for name in self.trusted_network.split(",")
+                if name.strip()]
 
     def websocket_url(self, raw_url):
         # Every parse step below can raise ValueError on input the settings

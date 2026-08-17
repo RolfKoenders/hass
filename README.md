@@ -90,8 +90,10 @@ star the ones you want in the panel.
 Optionally, turn on **Local network URL** to add your instance's LAN address.
 It's the same Home Assistant instance reached by a different address, so it
 reuses the one access token above rather than needing its own. It also asks
-for the name of your trusted Wi-Fi network: the local URL is only ever tried
-while connected to that network, and the URL above is used everywhere else.
+for the name of your trusted Wi-Fi network (comma-separate more than one, for
+example if your router has separate 2.4GHz/5GHz names): the local URL is only
+ever tried while connected to one of those, and the URL above is used
+everywhere else.
 This matters because the local URL is plaintext-friendly on the assumption
 that your home network is trustworthy — without the network-name check, a
 laptop that later joins some other Wi-Fi with something answering on that

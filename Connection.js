@@ -4,6 +4,17 @@
 // outside Service.qml makes the security boundary testable with Node as well
 // as usable by the QML service.
 
+// Mirrors bin/hass-bridge's Bridge.trusted_network_list: a comma-separated
+// list of Wi-Fi network names, since a router commonly broadcasts more than
+// one (separate 2.4GHz/5GHz SSIDs). Kept here so the settings UI's notion of
+// "is a trusted network actually configured" cannot drift from the bridge's
+// — a field containing only commas or whitespace must count as empty in both.
+function trustedNetworkList(value) {
+  return String(value || "").split(",")
+    .map(function(name) { return name.trim() })
+    .filter(function(name) { return name.length > 0 })
+}
+
 function preparedUrl(value) {
   var text = String(value || "").trim()
   if (!text) return ""

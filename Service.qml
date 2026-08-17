@@ -263,9 +263,9 @@ QtObject {
     // check exists to fail fast with a clear message instead of a silently
     // inert field.
     var trimmedTrust = String(trustedNetwork || "").trim()
-    if (!demo && trimmedLocal && !trimmedTrust) {
+    if (!demo && trimmedLocal && Connection.trustedNetworkList(trimmedTrust).length === 0) {
       root.phase = "error"
-      root.lastError = "Enter the trusted Wi-Fi network name for the local URL, or leave the local URL blank."
+      root.lastError = "Enter at least one trusted Wi-Fi network name for the local URL, or leave the local URL blank."
       return false
     }
     if (!demo && !token && root.requiresTokenFor(url)) {

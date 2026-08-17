@@ -266,7 +266,7 @@ Item {
       // A local URL with no trusted network to gate it would be tried on
       // every Wi-Fi the laptop joins.
       readonly property bool localUrlNeedsTrust: root.localUrlDraft.trim().length > 0
-        && root.trustedNetworkDraft.trim().length === 0
+        && Connection.trustedNetworkList(root.trustedNetworkDraft).length === 0
       readonly property bool canConnect: validUrl && validLocalUrl && !localUrlNeedsTrust
         && !keyringBusy && (!needsToken || root.tokenDraft.length > 0)
 
@@ -354,7 +354,7 @@ Item {
           Text {
             textFormat: Text.PlainText
             visible: root.localUrlExpanded
-            text: "Trusted Wi-Fi network name"
+            text: "Trusted Wi-Fi network name(s)"
             color: Color.muted
             font.family: root.family
             font.pixelSize: Style.font.bodySmall
@@ -364,7 +364,7 @@ Item {
             visible: root.localUrlExpanded
             width: connectionColumn.width
             text: root.trustedNetworkDraft
-            placeholderText: "Home"
+            placeholderText: "Home, Home 5G"
             onTextChanged: root.trustedNetworkDraft = text
           }
 
@@ -372,7 +372,7 @@ Item {
             textFormat: Text.PlainText
             width: connectionColumn.width
             visible: root.localUrlExpanded
-            text: "Required. The local URL is only ever tried while connected to this Wi-Fi network — never on any other network, so the token can't be sent to whatever happens to answer at that address elsewhere."
+            text: "Required. Comma-separated if your router has more than one (e.g. separate 2.4GHz/5GHz names). The local URL is only ever tried while connected to one of these — never on any other network, so the token can't be sent to whatever happens to answer at that address elsewhere."
             color: Color.muted
             font.family: root.family
             font.pixelSize: Style.font.caption
