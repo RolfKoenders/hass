@@ -150,7 +150,13 @@ def current_wifi_ssid():
 
     try:
         result = subprocess.run(
-            ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"],
+            # --rescan no: this only needs whatever NetworkManager already
+            # knows about the currently active connection, not a fresh scan
+            # of every nearby network. Without it, nmcli blocks on a full
+            # radio scan — several seconds, during which this call would
+            # freeze the bridge's single-threaded run loop.
+            ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi", "list",
+             "--rescan", "no"],
             capture_output=True, text=True, timeout=NETWORK_CHECK_TIMEOUT)
     except Exception:
         return None

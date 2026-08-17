@@ -93,7 +93,8 @@ reuses the one access token above rather than needing its own. It also asks
 for the name of your trusted Wi-Fi network (comma-separate more than one, for
 example if your router has separate 2.4GHz/5GHz names): the local URL is only
 ever tried while connected to one of those, and the URL above is used
-everywhere else.
+everywhere else. If that field is empty, it'll offer the network you're
+currently on as a one-click suggestion.
 This matters because the local URL is plaintext-friendly on the assumption
 that your home network is trustworthy — without the network-name check, a
 laptop that later joins some other Wi-Fi with something answering on that

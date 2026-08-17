@@ -15,6 +15,27 @@ function trustedNetworkList(value) {
     .filter(function(name) { return name.length > 0 })
 }
 
+// Mirrors bin/hass-bridge's current_wifi_ssid line parsing: nmcli -t's terse
+// output is "active:ssid" per line, with a literal ':' inside a field escaped
+// as '\:'. Settings.qml uses this only to suggest a value for the trusted
+// network field — the bridge is the actual security boundary and re-checks
+// the current network independently in Python before ever using a local URL.
+function parseNmcliActiveSsid(text) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var splitAt = -1
+    for (var c = 0; c < line.length; c++) {
+      if (line[c] === ":" && line[c - 1] !== "\\") { splitAt = c; break }
+    }
+    if (splitAt === -1) continue
+    if (line.slice(0, splitAt) !== "yes") continue
+    var ssid = line.slice(splitAt + 1).replace(/\\:/g, ":").replace(/\\\\/g, "\\")
+    if (ssid) return ssid
+  }
+  return ""
+}
+
 function preparedUrl(value) {
   var text = String(value || "").trim()
   if (!text) return ""

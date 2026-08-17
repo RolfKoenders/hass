@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Controls
@@ -33,7 +34,27 @@ Item {
   // this field, and a second always-visible URL box with its own warning text
   // outweighs the value of surfacing it up front.
   property bool localUrlExpanded: false
+  // Suggestion only, for the trusted-network field — read-only, not used for
+  // anything security-relevant. The bridge determines the actual network
+  // independently in Python before ever using a local URL.
+  property string detectedWifiSsid: ""
   property string tokenDraft: ""
+
+  Process {
+    id: wifiSsidProbe
+    // --rescan no: only what NetworkManager already knows about the active
+    // connection is needed here, not a fresh scan of every nearby network —
+    // that forces nmcli to block for several seconds instead of returning
+    // near-instantly.
+    command: ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi", "list",
+              "--rescan", "no"]
+    stdout: SplitParser {
+      onRead: function(value) {
+        var ssid = Connection.parseNmcliActiveSsid(value)
+        if (ssid) root.detectedWifiSsid = ssid
+      }
+    }
+  }
 
   property string query: ""
   // Debounced: a burst of keystrokes costs one pass over the entities.
@@ -79,6 +100,11 @@ Item {
     } catch (e) {
       // Not worth refusing to open over.
     }
+    // Fresh on every open, not just the first: the answer can change between
+    // sessions, and a stale one from an old network would suggest the wrong
+    // name.
+    root.detectedWifiSsid = ""
+    if (!wifiSsidProbe.running) wifiSsidProbe.running = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -270,247 +296,292 @@ Item {
       readonly property bool canConnect: validUrl && validLocalUrl && !localUrlNeedsTrust
         && !keyringBusy && (!needsToken || root.tokenDraft.length > 0)
 
-      Column {
-        id: connectionColumn
-        anchors { top: parent.top; left: parent.left; right: parent.right }
-        spacing: Style.spacing.xxxl
+      // Flickable rather than anchoring the column straight to the card: the
+      // card's height is fixed (see card.preferredHeight above), and this
+      // form has grown past it before — the local URL toggle alone added
+      // enough fields to spill content out past the card's border with
+      // nothing to contain it. A Column that can outgrow its container has to
+      // scroll, not just hope it never does.
+      Flickable {
+        id: connectionFlick
+        anchors.fill: parent
+        clip: true
+        contentWidth: width
+        contentHeight: connectionColumn.height
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Column {
-          width: connectionColumn.width
-          spacing: Style.spacing.sm
+          id: connectionColumn
+          width: connectionFlick.width
+          spacing: Style.spacing.xxxl
 
-          Text {
-            textFormat: Text.PlainText
-            text: "Home Assistant URL"
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          TextField {
+          Column {
             width: connectionColumn.width
-            text: root.urlDraft
-            placeholderText: "https://homeassistant.local:8123"
-            onTextChanged: root.urlDraft = text
+            spacing: Style.spacing.sm
+
+            Text {
+              textFormat: Text.PlainText
+              text: "Home Assistant URL"
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            TextField {
+              width: connectionColumn.width
+              text: root.urlDraft
+              placeholderText: "https://homeassistant.local:8123"
+              onTextChanged: root.urlDraft = text
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              width: connectionColumn.width
+              visible: root.urlDraft.trim().toLowerCase().indexOf("http://") === 0
+                || root.urlDraft.trim().toLowerCase().indexOf("ws://") === 0
+              text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
           }
 
-          Text {
-            textFormat: Text.PlainText
+          Column {
             width: connectionColumn.width
-            visible: root.urlDraft.trim().toLowerCase().indexOf("http://") === 0
-              || root.urlDraft.trim().toLowerCase().indexOf("ws://") === 0
-            text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
+            spacing: Style.spacing.sm
 
-        Column {
-          width: connectionColumn.width
-          spacing: Style.spacing.sm
+            // Ui/Toggle: label + description + switch, row owns the click.
+            Toggle {
+              width: connectionColumn.width
+              label: "Local network URL"
+              description: "Try a LAN address first, e.g. your instance's local IP, before falling back to the URL above. Uses the same access token."
+              checked: root.localUrlExpanded
+              foreground: root.foreground
+              fontFamily: root.family
+              onClicked: {
+                root.localUrlExpanded = !root.localUrlExpanded
+                // Collapsing means "no local URL" — a hidden stale draft would
+                // otherwise still reach applyConnection.
+                if (!root.localUrlExpanded) {
+                  root.localUrlDraft = ""
+                  root.trustedNetworkDraft = ""
+                }
+              }
+            }
+
+            TextField {
+              visible: root.localUrlExpanded
+              width: connectionColumn.width
+              text: root.localUrlDraft
+              placeholderText: "https://192.168.1.50:8123"
+              onTextChanged: root.localUrlDraft = text
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              width: connectionColumn.width
+              visible: root.localUrlExpanded
+                && (root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
+                  || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0)
+              text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: root.localUrlExpanded
+              text: "Trusted Wi-Fi network name(s)"
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            TextField {
+              visible: root.localUrlExpanded
+              width: connectionColumn.width
+              text: root.trustedNetworkDraft
+              placeholderText: "Home, Home 5G"
+              onTextChanged: root.trustedNetworkDraft = text
+            }
+
+            // A suggestion, not an autofill: it only offers the network this
+            // machine happens to be on right now, so it disappears the moment
+            // there's anything to lose by acting on it — a name typed in, or
+            // no detectable Wi-Fi at all.
+            Row {
+              visible: root.localUrlExpanded
+                && root.trustedNetworkDraft.trim().length === 0
+                && root.detectedWifiSsid.length > 0
+              spacing: Style.spacing.sm
+
+              Text {
+                textFormat: Text.PlainText
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Currently on “" + root.detectedWifiSsid + "”."
+                color: Color.muted
+                font.family: root.family
+                font.pixelSize: Style.font.caption
+              }
+
+              Button {
+                anchors.verticalCenter: parent.verticalCenter
+                bordered: true
+                text: "Use this"
+                foreground: root.foreground
+                fontFamily: root.family
+                onClicked: root.trustedNetworkDraft = root.detectedWifiSsid
+              }
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              width: connectionColumn.width
+              visible: root.localUrlExpanded
+              text: "Required. Comma-separated if your router has more than one (e.g. separate 2.4GHz/5GHz names). The local URL is only ever tried while connected to one of these — never on any other network, so the token can't be sent to whatever happens to answer at that address elsewhere."
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+          }
+
+          Column {
+            width: connectionColumn.width
+            spacing: Style.spacing.sm
+
+            Text {
+              textFormat: Text.PlainText
+              text: root.service && root.service.configured && !root.service.demoMode
+                ? "Access token · leave blank to keep the stored one"
+                : "Long-lived access token"
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            TextField {
+              width: connectionColumn.width
+              text: root.tokenDraft
+              password: true
+              placeholderText: "Paste from your Home Assistant profile"
+              onTextChanged: root.tokenDraft = text
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              width: connectionColumn.width
+              visible: connectionPane.needsToken && root.urlDraft.trim().length > 0
+              text: "Changing the server origin requires entering its token again."
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+          }
+
+          Row {
+            spacing: Style.spacing.xl
+
+            Button {
+              bordered: true   // Ui/Button is flat otherwise, reading as a label
+              text: "Connect"
+              opacity: connectionPane.canConnect ? 1.0 : 0.45
+              foreground: root.foreground
+              fontFamily: root.family
+              onClicked: if (connectionPane.canConnect) root.applyConnection()
+            }
+
+            Button {
+              visible: connectionPane.trying
+              bordered: true
+              text: "Cancel"
+              foreground: root.foreground
+              fontFamily: root.family
+              onClicked: root.service.cancelConnection()
+            }
+
+            Button {
+              visible: connectionPane.paused
+              bordered: true
+              text: "Retry"
+              foreground: root.foreground
+              fontFamily: root.family
+              onClicked: root.service.retryConnection()
+            }
+
+            Button {
+              bordered: true
+              text: "Remove"
+              opacity: (root.service && root.service.configured
+                        && !connectionPane.keyringBusy) ? 1.0 : 0.45
+              foreground: root.foreground
+              fontFamily: root.family
+              onClicked: {
+                if (!root.service || !root.service.configured
+                    || connectionPane.keyringBusy) return
+                root.service.removeConnection()
+                root.resetDrafts()
+              }
+            }
+          }
+
+          PanelSeparator { width: connectionColumn.width }
 
           // Ui/Toggle: label + description + switch, row owns the click.
           Toggle {
             width: connectionColumn.width
-            label: "Local network URL"
-            description: "Try a LAN address first, e.g. your instance's local IP, before falling back to the URL above. Uses the same access token."
-            checked: root.localUrlExpanded
+            label: "Demo mode"
+            description: "A fake house, so you can try the panel without an instance."
+            checked: root.service ? root.service.demoMode : false
             foreground: root.foreground
             fontFamily: root.family
-            onClicked: {
-              root.localUrlExpanded = !root.localUrlExpanded
-              // Collapsing means "no local URL" — a hidden stale draft would
-              // otherwise still reach applyConnection.
-              if (!root.localUrlExpanded) {
-                root.localUrlDraft = ""
-                root.trustedNetworkDraft = ""
+            onClicked: if (root.service) root.service.setDemoMode(!root.service.demoMode)
+          }
+
+          // From the live connection, not a probe: a probe on a different path
+          // can pass while the real connection fails.
+          Row {
+            spacing: Style.spacing.lg
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(8); height: width; radius: width / 2
+              color: !root.service ? Color.muted
+                   : root.service.phase === "connected" ? "#4caf50"
+                   : root.service.phase === "error" ? Color.urgent
+                   : Color.muted
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              anchors.verticalCenter: parent.verticalCenter
+              width: connectionColumn.width - Style.space(24)
+              text: {
+                if (!root.service) return "Service unavailable"
+                if (!root.service.configured) return "Not connected"
+                switch (root.service.phase) {
+                case "connected":
+                  return (root.service.demoMode ? "Demo running · "
+                    : root.service.usingLocal ? "Connected (local network) · "
+                    : "Connected · ")
+                    + Object.keys(root.service.states).length + " devices"
+                case "connecting": return root.service.lastError
+                  ? "Connecting… · " + root.service.lastError
+                  : "Connecting…"
+                case "error": return root.service.lastError || "Connection failed"
+                default: return root.service.lastError || "Idle"
+                }
               }
+              color: Color.muted
+              font.family: root.family
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
             }
-          }
-
-          TextField {
-            visible: root.localUrlExpanded
-            width: connectionColumn.width
-            text: root.localUrlDraft
-            placeholderText: "https://192.168.1.50:8123"
-            onTextChanged: root.localUrlDraft = text
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            width: connectionColumn.width
-            visible: root.localUrlExpanded
-              && (root.localUrlDraft.trim().toLowerCase().indexOf("http://") === 0
-                || root.localUrlDraft.trim().toLowerCase().indexOf("ws://") === 0)
-            text: "Warning: this URL sends your long-lived access token without transport encryption. Use HTTPS unless this is a trusted local network."
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            visible: root.localUrlExpanded
-            text: "Trusted Wi-Fi network name(s)"
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          TextField {
-            visible: root.localUrlExpanded
-            width: connectionColumn.width
-            text: root.trustedNetworkDraft
-            placeholderText: "Home, Home 5G"
-            onTextChanged: root.trustedNetworkDraft = text
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            width: connectionColumn.width
-            visible: root.localUrlExpanded
-            text: "Required. Comma-separated if your router has more than one (e.g. separate 2.4GHz/5GHz names). The local URL is only ever tried while connected to one of these — never on any other network, so the token can't be sent to whatever happens to answer at that address elsewhere."
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        Column {
-          width: connectionColumn.width
-          spacing: Style.spacing.sm
-
-          Text {
-            textFormat: Text.PlainText
-            text: root.service && root.service.configured && !root.service.demoMode
-              ? "Access token · leave blank to keep the stored one"
-              : "Long-lived access token"
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          TextField {
-            width: connectionColumn.width
-            text: root.tokenDraft
-            password: true
-            placeholderText: "Paste from your Home Assistant profile"
-            onTextChanged: root.tokenDraft = text
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            width: connectionColumn.width
-            visible: connectionPane.needsToken && root.urlDraft.trim().length > 0
-            text: "Changing the server origin requires entering its token again."
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        Row {
-          spacing: Style.spacing.xl
-
-          Button {
-            bordered: true   // Ui/Button is flat otherwise, reading as a label
-            text: "Connect"
-            opacity: connectionPane.canConnect ? 1.0 : 0.45
-            foreground: root.foreground
-            fontFamily: root.family
-            onClicked: if (connectionPane.canConnect) root.applyConnection()
-          }
-
-          Button {
-            visible: connectionPane.trying
-            bordered: true
-            text: "Cancel"
-            foreground: root.foreground
-            fontFamily: root.family
-            onClicked: root.service.cancelConnection()
-          }
-
-          Button {
-            visible: connectionPane.paused
-            bordered: true
-            text: "Retry"
-            foreground: root.foreground
-            fontFamily: root.family
-            onClicked: root.service.retryConnection()
-          }
-
-          Button {
-            bordered: true
-            text: "Remove"
-            opacity: (root.service && root.service.configured
-                      && !connectionPane.keyringBusy) ? 1.0 : 0.45
-            foreground: root.foreground
-            fontFamily: root.family
-            onClicked: {
-              if (!root.service || !root.service.configured
-                  || connectionPane.keyringBusy) return
-              root.service.removeConnection()
-              root.resetDrafts()
-            }
-          }
-        }
-
-        PanelSeparator { width: connectionColumn.width }
-
-        // Ui/Toggle: label + description + switch, row owns the click.
-        Toggle {
-          width: connectionColumn.width
-          label: "Demo mode"
-          description: "A fake house, so you can try the panel without an instance."
-          checked: root.service ? root.service.demoMode : false
-          foreground: root.foreground
-          fontFamily: root.family
-          onClicked: if (root.service) root.service.setDemoMode(!root.service.demoMode)
-        }
-
-        // From the live connection, not a probe: a probe on a different path
-        // can pass while the real connection fails.
-        Row {
-          spacing: Style.spacing.lg
-
-          Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(8); height: width; radius: width / 2
-            color: !root.service ? Color.muted
-                 : root.service.phase === "connected" ? "#4caf50"
-                 : root.service.phase === "error" ? Color.urgent
-                 : Color.muted
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            anchors.verticalCenter: parent.verticalCenter
-            width: connectionColumn.width - Style.space(24)
-            text: {
-              if (!root.service) return "Service unavailable"
-              if (!root.service.configured) return "Not connected"
-              switch (root.service.phase) {
-              case "connected":
-                return (root.service.demoMode ? "Demo running · "
-                  : root.service.usingLocal ? "Connected (local network) · "
-                  : "Connected · ")
-                  + Object.keys(root.service.states).length + " devices"
-              case "connecting": return root.service.lastError
-                ? "Connecting… · " + root.service.lastError
-                : "Connecting…"
-              case "error": return root.service.lastError || "Connection failed"
-              default: return root.service.lastError || "Idle"
-              }
-            }
-            color: Color.muted
-            font.family: root.family
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
           }
         }
       }

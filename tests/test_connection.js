@@ -108,6 +108,15 @@ eq("comma-separated names are split and trimmed",
    ["Home", "Home 5G", "Office"]);
 eq("only commas and whitespace is still empty",
    Connection.trustedNetworkList(" , , "), []);
+eq("no active line means no detected ssid",
+   Connection.parseNmcliActiveSsid("no:Neighbor\nno:CoffeeShop"), "");
+eq("the active line's ssid is detected",
+   Connection.parseNmcliActiveSsid("no:Neighbor\nyes:Home\nno:CoffeeShop"), "Home");
+eq("an escaped colon in the ssid is unescaped",
+   Connection.parseNmcliActiveSsid("yes:Office\\:5G"), "Office:5G");
+eq("an escaped backslash in the ssid is unescaped",
+   Connection.parseNmcliActiveSsid("yes:Back\\\\slash"), "Back\\slash");
+eq("empty input has no detected ssid", Connection.parseNmcliActiveSsid(""), "");
 eq("matching generation is accepted", Connection.acceptsGeneration(4, 4), true);
 eq("old generation is rejected", Connection.acceptsGeneration(5, 4), false);
 eq("missing generation is rejected", Connection.acceptsGeneration(5, undefined), false);

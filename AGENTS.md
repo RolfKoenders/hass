@@ -13,9 +13,12 @@ Canonical public repository: `https://github.com/konradk/hass`.
 The plugin must remain installable without npm, pip, a virtual environment, or
 first-run downloads. Python 3.11 or newer, `secret-tool`, and the vendored
 `websockets` package are the runtime dependencies. `nmcli` is an additional,
-conditional one: only invoked when a local network URL is actually configured
-(to check the current Wi-Fi network name), never otherwise. Its absence must
-degrade to "never use the local URL", not an error.
+conditional one, invoked from two places: the bridge (only when a local
+network URL is actually configured, to gate every connection attempt — see
+the security invariant below) and the settings UI (each time it opens, to
+suggest a value for the trusted-network field; read-only, never a security
+decision). Its absence must degrade to "never use the local URL" for the
+bridge and "no suggestion" for the UI, not an error either way.
 
 ## Architecture map
 
